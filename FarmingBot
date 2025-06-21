@@ -1,0 +1,741 @@
+# Discord Bot Complete Code Package
+
+## Quick Setup Instructions
+
+1. Create a new folder for your bot
+2. Copy all the files below into the folder structure shown
+3. Run `npm install` to install dependencies
+4. Set environment variables: `DISCORD_TOKEN` and `DISCORD_CLIENT_ID`
+5. Run `npm start` to start the bot
+
+## File Structure
+```
+your-bot/
+├── package.json
+├── server/
+│   ├── index.ts
+│   ├── bot/
+│   │   ├── index.ts
+│   │   ├── commands/
+│   │   │   ├── index.ts
+│   │   │   ├── ping.ts
+│   │   │   ├── help.ts
+│   │   │   ├── info.ts
+│   │   │   ├── commands.ts
+│   │   │   ├── restart.ts
+│   │   │   └── members.ts
+│   │   └── events/
+│   │       ├── ready.ts
+│   │       ├── interactionCreate.ts
+│   │       └── guildMemberAdd.ts
+│   └── services/
+│       ├── botService.ts
+│       └── logService.ts
+└── shared/
+    └── schema.ts
+```
+
+## Complete Files Below:
+
+### package.json
+```json
+{
+  "name": "discord-farming-bot",
+  "version": "1.0.0",
+  "description": "Standalone Discord bot with farming theme",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node --loader tsx/esm server/index.ts",
+    "dev": "tsx server/index.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "discord.js": "^14.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
+```
+
+### server/index.ts
+```typescript
+import { startBot } from './bot/index.js';
+
+console.log('🌾 Starting FarmingBot...');
+
+try {
+  await startBot();
+  console.log('✅ FarmingBot started successfully!');
+} catch (error) {
+  console.error('❌ Failed to start FarmingBot:', error);
+  process.exit(1);
+}
+
+// Keep the process alive
+process.on('SIGINT', () => {
+  console.log('🛑 FarmingBot shutting down...');
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.log('🛑 FarmingBot shutting down...');
+  process.exit(0);
+});
+```
+
+### server/bot/index.ts
+```typescript
+import { Client, GatewayIntentBits, REST, Routes, ActivityType } from 'discord.js';
+import { commands } from './commands/index.js';
+import { handleGuildMemberAdd } from './events/guildMemberAdd.js';
+
+const TOKEN = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN;
+const CLIENT_ID = process.env.DISCORD_CLIENT_ID || process.env.DISCORD_APPLICATION_ID;
+
+if (!TOKEN || !CLIENT_ID) {
+  throw new Error('Missing DISCORD_TOKEN or DISCORD_CLIENT_ID environment variables');
+}
+
+export const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildPresences,
+  ],
+});
+
+// Register slash commands
+async function registerCommands() {
+  try {
+    const rest = new REST({ version: '10' }).setToken(TOKEN);
+    
+    const commandData = commands.map(command => command.data.toJSON());
+    
+    await rest.put(
+      Routes.applicationCommands(CLIENT_ID),
+      { body: commandData }
+    );
+    
+    console.log(`Successfully registered ${commandData.length} slash commands`);
+  } catch (error) {
+    console.error('Error registering slash commands:', error);
+  }
+}
+
+// Bot ready event
+client.once('ready', async () => {
+  console.log(`Bot is ready! Logged in as ${client.user?.tag}`);
+  
+  // Register slash commands first
+  await registerCommands();
+  
+  // Set bot status after commands are registered
+  client.user?.setPresence({
+    activities: [{ 
+      name: 'Madness Farming', 
+      type: ActivityType.Playing
+    }],
+    status: 'online',
+  });
+  
+  console.log('Bot is fully online with status: Playing Madness Farming');
+});
+
+// Handle interactions
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const command = commands.find(cmd => cmd.data.name === interaction.commandName);
+  
+  if (!command) {
+    console.error(`Unknown command: ${interaction.commandName}`);
+    return;
+  }
+
+  try {
+    await command.execute(interaction);
+    console.log(`${interaction.commandName} command executed by ${interaction.user.tag}`);
+  } catch (error) {
+    console.error('Error executing command:', error);
+    
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
+    } else {
+      await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+    }
+  }
+});
+
+// Handle new members joining
+client.on('guildMemberAdd', async (member) => {
+  await handleGuildMemberAdd(member);
+});
+
+// Start the bot
+export async function startBot() {
+  try {
+    await client.login(TOKEN);
+  } catch (error) {
+    console.error('Failed to start bot:', error);
+    throw error;
+  }
+}
+
+// Get bot stats
+export function getBotStats() {
+  const isOnline = client.isReady() && client.user;
+  return {
+    status: isOnline ? 'online' : 'offline',
+    guildCount: isOnline ? client.guilds.cache.size : 0,
+    userCount: isOnline ? client.users.cache.size : 0,
+    uptime: isOnline ? client.uptime : 0,
+    ping: isOnline ? client.ws.ping : 0,
+  };
+}
+```
+
+## Environment Variables
+
+Create a `.env` file (for local testing) or set these in your hosting platform:
+
+```
+DISCORD_TOKEN=your_discord_bot_token_here
+DISCORD_CLIENT_ID=your_discord_application_id_here
+```
+
+## Deployment Instructions
+
+### Railway (Free hosting):
+1. Push code to GitHub
+2. Connect GitHub to Railway
+3. Add environment variables
+4. Deploy
+
+### Heroku:
+1. Create Heroku app
+2. Connect GitHub repository
+3. Add environment variables in settings
+4. Enable automatic deploys
+
+### VPS/Server:
+1. Install Node.js 18+
+2. Clone/upload your code
+3. Set environment variables
+4. Run `npm install && npm start`
+5. Use PM2 for process management: `pm2 start "npm start" --name farmingbot`
+
+### server/bot/commands/index.ts
+```typescript
+import { pingCommand } from './ping.js';
+import { helpCommand } from './help.js';
+import { infoCommand } from './info.js';
+import { commandsCommand } from './commands.js';
+import { restartCommand } from './restart.js';
+import { membersCommand } from './members.js';
+
+export const commands = [
+  pingCommand,
+  helpCommand,
+  infoCommand,
+  commandsCommand,
+  restartCommand,
+  membersCommand,
+];
+```
+
+### server/bot/commands/ping.ts
+```typescript
+import { CommandInteraction, SlashCommandBuilder } from 'discord.js';
+
+export const pingCommand = {
+  data: new SlashCommandBuilder()
+    .setName('ping')
+    .setDescription('Check bot response time and latency'),
+
+  async execute(interaction: CommandInteraction) {
+    const sent = await interaction.reply({ content: 'Pinging...', fetchReply: true });
+    const roundtripLatency = sent.createdTimestamp - interaction.createdTimestamp;
+    const wsLatency = interaction.client.ws.ping;
+
+    await interaction.editReply({
+      content: `🏓 **Pong!**\n` +
+               `📡 **Roundtrip Latency:** ${roundtripLatency}ms\n` +
+               `💓 **WebSocket Latency:** ${wsLatency}ms\n` +
+               `✅ **Status:** ${wsLatency < 100 ? 'Excellent' : wsLatency < 200 ? 'Good' : 'Fair'}`
+    });
+  },
+};
+```
+
+### server/bot/commands/help.ts
+```typescript
+import { CommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+
+export const helpCommand = {
+  data: new SlashCommandBuilder()
+    .setName('help')
+    .setDescription('Display help message with all commands'),
+
+  async execute(interaction: CommandInteraction) {
+    const embed = new EmbedBuilder()
+      .setTitle('🌾 FarmingBot Help Center 🌾')
+      .setDescription('Welcome to FarmingBot! Here are my available commands:')
+      .setColor('#00FF7F')
+      .addFields(
+        {
+          name: '🏓 Basic Commands',
+          value: '`/ping` - Check bot latency\n`/info` - View bot statistics\n`/commands` - See detailed command list',
+          inline: false
+        },
+        {
+          name: '👥 Server Commands', 
+          value: '`/memberscount` - View all server members with status',
+          inline: false
+        },
+        {
+          name: '⚙️ Admin Commands',
+          value: '`/restart` - Restart the bot (Admin only)',
+          inline: false
+        },
+        {
+          name: '🎯 Quick Tips',
+          value: '• All commands work instantly\n• Bot runs 24/7 automatically\n• Welcome messages for new members\n• Use `/commands` for detailed descriptions',
+          inline: false
+        }
+      )
+      .setThumbnail(interaction.client.user?.displayAvatarURL())
+      .setFooter({ 
+        text: 'FarmingBot - Always here to help! 🌱',
+        iconURL: interaction.client.user?.displayAvatarURL()
+      })
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [embed] });
+  },
+};
+```
+
+### server/bot/commands/info.ts
+```typescript
+import { CommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+
+export const infoCommand = {
+  data: new SlashCommandBuilder()
+    .setName('info')
+    .setDescription('Show detailed bot information and statistics'),
+
+  async execute(interaction: CommandInteraction) {
+    const client = interaction.client;
+    const uptime = client.uptime ? formatUptime(client.uptime) : 'Unknown';
+    
+    const embed = new EmbedBuilder()
+      .setTitle('🤖 FarmingBot Information')
+      .setColor('#5865F2')
+      .setThumbnail(client.user?.displayAvatarURL())
+      .addFields(
+        {
+          name: '📊 Bot Statistics',
+          value: `**Servers:** ${client.guilds.cache.size}\n**Users:** ${client.users.cache.size}\n**Uptime:** ${uptime}`,
+          inline: true
+        },
+        {
+          name: '⚡ Performance',
+          value: `**Ping:** ${client.ws.ping}ms\n**Memory:** ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB\n**Node.js:** ${process.version}`,
+          inline: true
+        },
+        {
+          name: '🌾 Bot Features',
+          value: '• 6 Slash Commands\n• Welcome System\n• 24/7 Uptime\n• Admin Controls\n• Member Management',
+          inline: false
+        },
+        {
+          name: '🎮 Current Status',
+          value: '**Status:** Online\n**Activity:** Playing Madness Farming\n**Version:** 1.0.0',
+          inline: false
+        }
+      )
+      .setFooter({ 
+        text: `Requested by ${interaction.user.username}`,
+        iconURL: interaction.user.displayAvatarURL()
+      })
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [embed] });
+  },
+};
+
+function formatUptime(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) return `${days}d ${hours % 24}h ${minutes % 60}m`;
+  if (hours > 0) return `${hours}h ${minutes % 60}m`;
+  if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+  return `${seconds}s`;
+}
+```
+
+### server/bot/commands/commands.ts
+```typescript
+import { SlashCommandBuilder, CommandInteraction, EmbedBuilder } from 'discord.js';
+
+export const commandsCommand = {
+  data: new SlashCommandBuilder()
+    .setName('commands')
+    .setDescription('Display all available slash commands with detailed descriptions'),
+  
+  async execute(interaction: CommandInteraction) {
+    const embed = new EmbedBuilder()
+      .setTitle('🎮 Available Commands')
+      .setDescription('Here are all the slash commands you can use:')
+      .setColor('#5865F2')
+      .addFields(
+        {
+          name: '🏓 `/ping`',
+          value: '```Check bot response time and latency\nUsage: /ping```',
+          inline: false
+        },
+        {
+          name: '❓ `/help`',
+          value: '```Display help message with all commands\nUsage: /help```',
+          inline: false
+        },
+        {
+          name: 'ℹ️ `/info`',
+          value: '```Show detailed bot information and statistics\nUsage: /info```',
+          inline: false
+        },
+        {
+          name: '🎮 `/commands`',
+          value: '```Display this detailed command list\nUsage: /commands```',
+          inline: false
+        },
+        {
+          name: '🔄 `/restart`',
+          value: '```Restart the bot (admin only)\nUsage: /restart\nPermissions: Administrator```',
+          inline: false
+        },
+        {
+          name: '👥 `/memberscount`',
+          value: '```Display a list of all server members with count and status\nUsage: /memberscount```',
+          inline: false
+        }
+      )
+      .setFooter({ 
+        text: 'Bot hosted 24/7 • Always available',
+        iconURL: interaction.client.user?.displayAvatarURL()
+      })
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [embed] });
+  },
+};
+```
+
+### server/bot/commands/restart.ts
+```typescript
+import { CommandInteraction, SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
+
+export const restartCommand = {
+  data: new SlashCommandBuilder()
+    .setName('restart')
+    .setDescription('Restart the bot (administrator only)')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+  async execute(interaction: CommandInteraction) {
+    // Check if user has administrator permissions
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      const noPermEmbed = new EmbedBuilder()
+        .setColor('#FF0000')
+        .setTitle('❌ Access Denied')
+        .setDescription('You need **Administrator** permissions to restart the bot.')
+        .setFooter({ text: 'Contact a server administrator for help' })
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [noPermEmbed], ephemeral: true });
+      return;
+    }
+
+    // Create restart confirmation embed
+    const restartEmbed = new EmbedBuilder()
+      .setColor('#FFA500')
+      .setTitle('🔄 Bot Restarting')
+      .setDescription('The bot is restarting... It will be back online in a few seconds.')
+      .addFields(
+        {
+          name: '⏱️ Estimated Downtime',
+          value: '3-5 seconds',
+          inline: true
+        },
+        {
+          name: '🔄 Bot will automatically reconnect',
+          value: 'Today at ' + new Date().toLocaleTimeString(),
+          inline: true
+        }
+      )
+      .setFooter({ text: `Restart initiated by ${interaction.user.username}` })
+      .setTimestamp();
+
+    try {
+      // Send restart message
+      await interaction.reply({ embeds: [restartEmbed] });
+      
+      console.log(`Bot restart initiated by ${interaction.user.tag} in ${interaction.guild?.name || 'DM'}`);
+      
+      // Wait a moment for the message to be sent
+      setTimeout(() => {
+        console.log('Bot restarting via /restart command...');
+        process.exit(0); // Exit cleanly - hosting platform will restart automatically
+      }, 2000);
+      
+    } catch (error) {
+      console.error('Error during restart command:', error);
+      
+      const errorEmbed = new EmbedBuilder()
+        .setColor('#FF0000')
+        .setTitle('❌ Restart Failed')
+        .setDescription('There was an error attempting to restart the bot. Please try again or contact support.')
+        .setTimestamp();
+      
+      if (interaction.replied) {
+        await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
+      } else {
+        await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
+    }
+  },
+};
+```
+
+### server/bot/commands/members.ts
+```typescript
+import { CommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+
+export const membersCommand = {
+  data: new SlashCommandBuilder()
+    .setName('memberscount')
+    .setDescription('Display a list of all server members with count'),
+
+  async execute(interaction: CommandInteraction) {
+    if (!interaction.guild) {
+      await interaction.reply({ content: 'This command can only be used in a server!', ephemeral: true });
+      return;
+    }
+
+    try {
+      // Fetch all members to ensure we have the complete list
+      await interaction.guild.members.fetch();
+      
+      const members = interaction.guild.members.cache;
+      const memberCount = members.size;
+
+      // Separate bots and humans
+      const humans = members.filter(member => !member.user.bot);
+      const bots = members.filter(member => member.user.bot);
+
+      // Create member lists with status indicators
+      const createMemberList = (memberCollection: any, isBot = false) => {
+        const memberArray = Array.from(memberCollection.values());
+        
+        if (memberArray.length === 0) {
+          return isBot ? 'No bots found' : 'No members found';
+        }
+
+        // Sort by status (online first) and then by username
+        memberArray.sort((a, b) => {
+          const statusOrder = { 'online': 1, 'idle': 2, 'dnd': 3, 'offline': 4 };
+          const aStatus = statusOrder[a.presence?.status || 'offline'] || 4;
+          const bStatus = statusOrder[b.presence?.status || 'offline'] || 4;
+          
+          if (aStatus !== bStatus) return aStatus - bStatus;
+          return a.user.username.localeCompare(b.user.username);
+        });
+
+        return memberArray.map(member => {
+          const statusEmoji = {
+            'online': '🟢',
+            'idle': '🟡', 
+            'dnd': '🔴',
+            'offline': '⚫'
+          };
+          
+          const status = member.presence?.status || 'offline';
+          const emoji = statusEmoji[status] || '⚫';
+          
+          return `${emoji} ${member.user.username}`;
+        }).join('\n');
+      };
+
+      // Create embeds for the member list
+      const humanList = createMemberList(humans);
+      const botList = createMemberList(bots, true);
+
+      const embed = new EmbedBuilder()
+        .setColor('#00FF7F')
+        .setTitle(`🌾 ${interaction.guild.name} Member List 🌾`)
+        .setDescription(`Total Members: **${memberCount}** (${humans.size} humans, ${bots.size} bots)`)
+        .setTimestamp()
+        .setFooter({ 
+          text: `Requested by ${interaction.user.username}`, 
+          iconURL: interaction.user.displayAvatarURL() 
+        });
+
+      // Add human members field (split if too long)
+      if (humanList.length <= 1024) {
+        embed.addFields({
+          name: `👥 Human Members (${humans.size})`,
+          value: humanList || 'No human members found',
+          inline: false
+        });
+      } else {
+        // Split long member list into multiple fields
+        const chunks = humanList.match(/.{1,1020}/g) || [];
+        chunks.forEach((chunk, index) => {
+          embed.addFields({
+            name: `👥 Human Members ${index + 1}/${chunks.length}`,
+            value: chunk,
+            inline: false
+          });
+        });
+      }
+
+      // Add bot members field (if there are any)
+      if (bots.size > 0) {
+        if (botList.length <= 1024) {
+          embed.addFields({
+            name: `🤖 Bots (${bots.size})`,
+            value: botList,
+            inline: false
+          });
+        } else {
+          // Split long bot list if needed
+          const chunks = botList.match(/.{1,1020}/g) || [];
+          chunks.forEach((chunk, index) => {
+            embed.addFields({
+              name: `🤖 Bots ${index + 1}/${chunks.length}`,
+              value: chunk,
+              inline: false
+            });
+          });
+        }
+      }
+
+      // Add legend
+      embed.addFields({
+        name: '📊 Status Legend',
+        value: '🟢 Online • 🟡 Idle • 🔴 Do Not Disturb • ⚫ Offline',
+        inline: false
+      });
+
+      await interaction.reply({ embeds: [embed] });
+
+    } catch (error) {
+      console.error('Error in memberscount command:', error);
+      
+      await interaction.reply({ 
+        content: 'Sorry, there was an error fetching the member list. Please try again later.', 
+        ephemeral: true 
+      });
+    }
+  },
+};
+```
+
+### server/bot/events/guildMemberAdd.ts
+```typescript
+import { GuildMember, EmbedBuilder, TextChannel } from 'discord.js';
+
+export async function handleGuildMemberAdd(member: GuildMember) {
+  try {
+    console.log(`New member joined: ${member.user.tag}`);
+    
+    // Find a welcome channel (look for common names)
+    const welcomeChannelNames = ['welcome', 'general', 'main', 'lobby', 'entrance'];
+    let welcomeChannel: TextChannel | null = null;
+    
+    for (const channelName of welcomeChannelNames) {
+      const channel = member.guild.channels.cache.find(
+        ch => ch.name.toLowerCase().includes(channelName) && ch.isTextBased()
+      ) as TextChannel;
+      
+      if (channel) {
+        welcomeChannel = channel;
+        break;
+      }
+    }
+    
+    // If no welcome channel found, use the first available text channel
+    if (!welcomeChannel) {
+      const textChannels = member.guild.channels.cache.filter(
+        ch => ch.isTextBased() && ch.type === 0
+      );
+      welcomeChannel = textChannels.first() as TextChannel;
+    }
+    
+    if (welcomeChannel) {
+      // Create welcome embed
+      const welcomeEmbed = new EmbedBuilder()
+        .setColor('#00FF7F')
+        .setTitle('🌾 Welcome to the Farm! 🌾')
+        .setDescription(`Welcome ${member.user}, we're excited to have you join our farming community!`)
+        .addFields(
+          { 
+            name: '🚜 Getting Started', 
+            value: 'Use `/help` to see all available commands and start your farming journey!' 
+          },
+          { 
+            name: '📊 Bot Commands', 
+            value: 'Type `/commands` to see the full list of bot features available to you.' 
+          },
+          { 
+            name: '🎮 Have Fun!', 
+            value: 'Enjoy your time in the server and happy farming!' 
+          }
+        )
+        .setThumbnail(member.user.displayAvatarURL())
+        .setTimestamp()
+        .setFooter({ 
+          text: `Member #${member.guild.memberCount}`, 
+          iconURL: member.guild.iconURL() || undefined 
+        });
+
+      // Send welcome message
+      await welcomeChannel.send({ 
+        content: `${member.user} just joined the server! 🎉`, 
+        embeds: [welcomeEmbed] 
+      });
+      
+      console.log(`Welcome message sent to ${welcomeChannel.name} for ${member.user.tag}`);
+    } else {
+      console.log(`No suitable welcome channel found for ${member.user.tag}`);
+    }
+    
+  } catch (error) {
+    console.error('Error in welcome handler:', error);
+  }
+}
+```
+
+## Installation & Deployment
+
+### Quick Start:
+1. Create new folder
+2. Copy all code above into respective files
+3. Run: `npm install discord.js tsx typescript`
+4. Set environment variables
+5. Run: `npm start`
+
+### For 24/7 Hosting:
+- **Railway**: Free, GitHub integration
+- **Heroku**: Free tier available  
+- **Render**: Free static hosting
+- **VPS**: $3-10/month guaranteed uptime
+
+The bot will run 24/7 independently with all 6 commands and welcome system!
